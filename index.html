@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web NFC Demo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .nfc-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .5; transform: scale(1.05); } }
+        .active-tab { border-bottom: 3px solid #6366f1; color: #6366f1; }
+        .type-grid-item { @apply p-2 rounded-xl border border-slate-100 flex flex-col items-center justify-center transition-all bg-white text-slate-500 hover:border-indigo-200; }
+        .type-grid-item.selected { @apply bg-indigo-50 border-indigo-300 text-indigo-700 shadow-sm ring-2 ring-indigo-200 ring-opacity-50; }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen text-slate-900 font-sans pb-10">
+
+    <div class="max-w-lg mx-auto p-4">
+        <!-- Header -->
+        <header class="py-6 text-center">
+            <div class="inline-flex items-center justify-center p-4 bg-gradient-to-br from-indigo-600 to-blue-600 rounded-[2rem] shadow-xl mb-4 text-white">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4" />
+                </svg>
+            </div>
+            <h1 class="text-2xl font-black text-slate-800 tracking-tight">Web NFC Demo</h1>
+            <p class="text-xs font-bold text-slate-400 mt-1 uppercase tracking-[0.2em]">Universal Writing Lab</p>
+        </header>
+
+        <!-- Connectivity Status -->
+        <div id="status-bar" class="mb-6 p-3 rounded-2xl bg-white border border-slate-100 shadow-sm flex items-center justify-between px-5">
+            <div class="flex items-center space-x-2">
+                <div id="status-led" class="w-2.5 h-2.5 rounded-full bg-slate-300"></div>
+                <span id="status-text" class="text-[10px] font-bold text-slate-500 uppercase">Checking NFC...</span>
+            </div>
+            <div class="text-[9px] font-bold text-slate-300 uppercase">Ver 2.5</div>
+        </div>
+
+        <div id="app-main" class="hidden space-y-4">
+            <!-- Tabs -->
+            <div class="flex bg-slate-200/50 p-1 rounded-2xl">
+                <button onclick="switchMode('write')" id="tab-write" class="flex-1 py-2.5 text-xs font-black rounded-xl transition-all bg-white shadow-sm text-indigo-600">WRITE (書き込み)</button>
+                <button onclick="switchMode('read')" id="tab-read" class="flex-1 py-2.5 text-xs font-black rounded-xl transition-all text-slate-500">READ (読み取り)</button>
+            </div>
+
+            <!-- WRITE SECTION -->
+            <section id="sec-write" class="space-y-4">
+                <div class="bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
+                    <label class="block text-[10px] font-black text-slate-400 uppercase mb-4 tracking-widest">Select Data Category</label>
+                    
+                    <!-- All Categories Grid -->
+                    <div class="grid grid-cols-4 gap-2 mb-6">
+                        <button onclick="selectType('text')" class="type-grid-item selected" id="btn-text">
+                            <span class="text-xl">📄</span><span class="text-[8px] font-black mt-1 uppercase">Text</span>
+                        </button>
+                        <button onclick="selectType('url')" class="type-grid-item" id="btn-url">
+                            <span class="text-xl">🔗</span><span class="text-[8px] font-black mt-1 uppercase">Link</span>
+                        </button>
+                        <button onclick="selectType('wifi')" class="type-grid-item" id="btn-wifi">
+                            <span class="text-xl">📶</span><span class="text-[8px] font-black mt-1 uppercase">Wi-Fi</span>
+                        </button>
+                        <button onclick="selectType('crypto')" class="type-grid-item" id="btn-crypto">
+                            <span class="text-xl">₿</span><span class="text-[8px] font-black mt-1 uppercase">Crypto</span>
+                        </button>
+                        <button onclick="selectType('vcard')" class="type-grid-item" id="btn-vcard">
+                            <span class="text-xl">📇</span><span class="text-[8px] font-black mt-1 uppercase">Contact</span>
+                        </button>
+                        <button onclick="selectType('geo')" class="type-grid-item" id="btn-geo">
+                            <span class="text-xl">📍</span><span class="text-[8px] font-black mt-1 uppercase">Map</span>
+                        </button>
+                        <button onclick="selectType('ice')" class="type-grid-item" id="btn-ice">
+                            <span class="text-xl">🚑</span><span class="text-[8px] font-black mt-1 uppercase">ICE</span>
+                        </button>
+                        <button onclick="selectType('webhook')" class="type-grid-item" id="btn-webhook">
+                            <span class="text-xl">⚡</span><span class="text-[8px] font-black mt-1 uppercase">IoT</span>
+                        </button>
+                    </div>
+
+                    <!-- Dynamic Forms -->
+                    <div id="form-area" class="min-h-[160px] border-t border-slate-50 pt-4">
+                        <!-- Content via JS -->
+                    </div>
+
+                    <button id="btn-exec-write" class="w-full mt-6 py-4 bg-slate-900 text-white font-black rounded-2xl shadow-xl transition-all active:scale-95 disabled:opacity-30">
+                        タグに書き込む
+                    </button>
+                </div>
+
+                <!-- ICE Hint -->
+                <div id="ice-hint" class="hidden p-4 bg-amber-50 rounded-2xl border border-amber-100">
+                    <h4 class="text-amber-700 text-xs font-black mb-1 flex items-center">
+                        <span class="mr-1">💡</span> ICE書き込みのヒント
+                    </h4>
+                    <p class="text-[10px] text-amber-600 leading-relaxed">
+                        スマホはセキュリティ上、ロック中に勝手にNFCを読み取ることはありません。緊急時に気づいてもらうには、タグに「<b>ICE (緊急連絡先)</b>」と書かれたシールを貼るか、医療用IDブレスレット型のタグを使用するのが一般的です。
+                    </p>
+                </div>
+            </section>
+
+            <!-- READ SECTION -->
+            <section id="sec-read" class="hidden space-y-4">
+                <div class="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 text-center">
+                    <div id="read-idle">
+                        <div class="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <span class="text-2xl">📡</span>
+                        </div>
+                        <h3 class="text-lg font-black text-slate-800">Scanner Ready</h3>
+                        <p class="text-xs text-slate-400 mt-1 mb-6">「スキャン開始」を押してタグにかざしてください</p>
+                        <button id="btn-exec-read" class="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl shadow-lg transition-all active:scale-95">
+                            スキャン開始
+                        </button>
+                    </div>
+                    <div id="read-busy" class="hidden">
+                        <div class="w-20 h-20 bg-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4 nfc-pulse shadow-lg shadow-indigo-200">
+                            <span class="text-white text-3xl">📳</span>
+                        </div>
+                        <h3 class="text-lg font-black text-indigo-600">Searching...</h3>
+                        <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">タグをデバイスの背面に近づけてください</p>
+                    </div>
+                </div>
+                <div id="read-log" class="space-y-3"></div>
+            </section>
+        </div>
+
+        <!-- System Msg -->
+        <div id="unsupported-msg" class="hidden mt-10 p-10 bg-white rounded-[2.5rem] border border-red-50 text-center shadow-sm">
+            <div class="text-5xl mb-6">🧩</div>
+            <h3 class="text-xl font-black text-slate-800 mb-2">Web NFC 非対応</h3>
+            <p class="text-sm text-slate-400 leading-relaxed">Android版 Chrome等の対応ブラウザを使用してください。また、HTTPS接続が必須です。</p>
+        </div>
+
+        <!-- Mini Debug -->
+        <div id="debug-log" class="mt-6 p-3 bg-slate-800 rounded-xl text-[9px] font-mono text-emerald-500 overflow-auto max-h-32 hidden custom-scroll"></div>
+    </div>
+
+    <!-- Global Toast -->
+    <div id="toast" class="fixed bottom-8 left-1/2 -translate-x-1/2 px-6 py-3 rounded-2xl bg-slate-900 text-white text-[11px] font-bold shadow-2xl opacity-0 translate-y-10 transition-all duration-300 pointer-events-none z-50"></div>
+
+    <script>
+        let currentType = 'text';
+        const formArea = document.getElementById('form-area');
+        const toast = document.getElementById('toast');
+        const debug = document.getElementById('debug-log');
+
+        const forms = {
+            text: `<div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">メッセージ内容</label><textarea id="f-text" class="w-full p-3 mt-1 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500" rows="3" placeholder="こんにちは！"></textarea></div>`,
+            url: `<div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Webアドレス</label><input type="url" id="f-url" class="w-full p-3 mt-1 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="https://google.com"></div>`,
+            wifi: `<div class="space-y-3">
+                <input type="text" id="f-wifi-s" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="SSID (ネットワーク名)">
+                <div class="grid grid-cols-2 gap-2">
+                    <input type="password" id="f-wifi-p" class="p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="パスワード">
+                    <select id="f-wifi-t" class="p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none"><option value="WPA">WPA/WPA2</option><option value="WEP">WEP</option><option value="nopass">None</option></select>
+                </div>
+            </div>`,
+            crypto: `<div class="space-y-3">
+                <select id="f-cry-c" class="w-full p-3 bg-indigo-50 border border-indigo-100 rounded-xl text-sm font-bold text-indigo-700 outline-none">
+                    <option value="bitcoin">Bitcoin (BTC)</option><option value="ethereum">Ethereum (ETH)</option><option value="solana">Solana (SOL)</option><option value="dogecoin">Dogecoin (DOGE)</option>
+                </select>
+                <input type="text" id="f-cry-a" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Wallet Address">
+            </div>`,
+            vcard: `<div class="space-y-3">
+                <input type="text" id="f-vc-n" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="氏名 (山田 太郎)">
+                <input type="tel" id="f-vc-t" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="電話番号">
+                <input type="email" id="f-vc-e" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="メールアドレス">
+            </div>`,
+            geo: `<div class="grid grid-cols-2 gap-2">
+                <input type="number" id="f-geo-la" step="0.0001" class="p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none" value="35.6895">
+                <input type="number" id="f-geo-lo" step="0.0001" class="p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none" value="139.6917">
+                <p class="col-span-2 text-[9px] text-slate-400 px-1">緯度と経度を入力してください</p>
+            </div>`,
+            ice: `<div class="space-y-3 bg-red-50 p-3 rounded-xl border border-red-100">
+                <div class="flex items-center text-red-600 font-black text-[9px] uppercase mb-1"><span class="mr-1">🚑</span> Emergency Contact Info</div>
+                <input type="text" id="f-ice-m" class="w-full p-3 bg-white border border-red-100 rounded-lg text-sm outline-none" placeholder="血液型・持病など">
+                <input type="text" id="f-ice-c" class="w-full p-3 bg-white border border-red-100 rounded-lg text-sm outline-none" placeholder="緊急連絡先 (名前・電話番号)">
+            </div>`,
+            webhook: `<div class="space-y-3">
+                <p class="text-[10px] text-slate-400">IoTボタンとして。IFTTT等のWebhook URLを書き込みます。</p>
+                <input type="url" id="f-wh-u" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="https://maker.ifttt.com/trigger/...">
+            </div>`
+        };
+
+        function showToast(msg) {
+            toast.textContent = msg;
+            toast.classList.remove('opacity-0', 'translate-y-10');
+            toast.classList.add('opacity-100', 'translate-y-0');
+            setTimeout(() => { toast.classList.add('opacity-0', 'translate-y-10'); toast.classList.remove('opacity-100', 'translate-y-0'); }, 3000);
+        }
+
+        function log(msg, err = false) {
+            const d = document.createElement('div');
+            d.className = err ? 'text-red-400 mb-1' : 'text-emerald-500 mb-1';
+            d.textContent = `> [${new Date().toLocaleTimeString()}] ${msg}`;
+            debug.prepend(d);
+            debug.classList.remove('hidden');
+        }
+
+        function selectType(type) {
+            currentType = type;
+            document.querySelectorAll('.type-grid-item').forEach(el => el.classList.remove('selected'));
+            document.getElementById(`btn-${type}`).classList.add('selected');
+            formArea.innerHTML = forms[type];
+            document.getElementById('ice-hint').classList.toggle('hidden', type !== 'ice');
+        }
+
+        function switchMode(mode) {
+            const isW = mode === 'write';
+            document.getElementById('sec-write').classList.toggle('hidden', !isW);
+            document.getElementById('sec-read').classList.toggle('hidden', isW);
+            document.getElementById('tab-write').className = isW ? 'flex-1 py-2.5 text-xs font-black rounded-xl transition-all bg-white shadow-sm text-indigo-600' : 'flex-1 py-2.5 text-xs font-black rounded-xl transition-all text-slate-500';
+            document.getElementById('tab-read').className = !isW ? 'flex-1 py-2.5 text-xs font-black rounded-xl transition-all bg-white shadow-sm text-indigo-600' : 'flex-1 py-2.5 text-xs font-black rounded-xl transition-all text-slate-500';
+        }
+
+        window.onload = () => {
+            if ('NDEFReader' in window) {
+                document.getElementById('status-led').classList.replace('bg-slate-300', 'bg-emerald-500');
+                document.getElementById('status-text').textContent = 'Web NFC Available';
+                document.getElementById('status-text').classList.replace('text-slate-500', 'text-emerald-600');
+                document.getElementById('app-main').classList.remove('hidden');
+                selectType('text');
+                log('Web NFC initialized.');
+            } else {
+                document.getElementById('unsupported-msg').classList.remove('hidden');
+            }
+        };
+
+        // WRITE LOGIC
+        document.getElementById('btn-exec-write').onclick = async () => {
+            try {
+                let data = "";
+                let type = "text";
+
+                switch(currentType) {
+                    case 'text': data = document.getElementById('f-text').value; break;
+                    case 'url': data = document.getElementById('f-url').value; type = "url"; break;
+                    case 'wifi':
+                        const s = document.getElementById('f-wifi-s').value;
+                        const p = document.getElementById('f-wifi-p').value;
+                        const t = document.getElementById('f-wifi-t').value;
+                        data = `WIFI:S:${s};T:${t};P:${p};;`;
+                        break;
+                    case 'crypto':
+                        data = `${document.getElementById('f-cry-c').value}:${document.getElementById('f-cry-a').value}`;
+                        type = "url";
+                        break;
+                    case 'vcard':
+                        const n = document.getElementById('f-vc-n').value;
+                        const tel = document.getElementById('f-vc-t').value;
+                        const em = document.getElementById('f-vc-e').value;
+                        data = `BEGIN:VCARD\nVERSION:3.0\nFN:${n}\nTEL:${tel}\nEMAIL:${em}\nEND:VCARD`;
+                        break;
+                    case 'geo':
+                        data = `geo:${document.getElementById('f-geo-la').value},${document.getElementById('f-geo-lo').value}`;
+                        type = "url";
+                        break;
+                    case 'ice':
+                        data = `ICE EMERGENCY INFO\nMED: ${document.getElementById('f-ice-m').value}\nCONTACT: ${document.getElementById('f-ice-c').value}`;
+                        break;
+                    case 'webhook':
+                        data = document.getElementById('f-wh-u').value;
+                        type = "url";
+                        break;
+                }
+
+                if(!data) throw new Error("データを入力してください");
+
+                const ndef = new NDEFReader();
+                const btn = document.getElementById('btn-exec-write');
+                btn.disabled = true;
+                btn.textContent = 'タグを待機中...';
+                showToast("タグを近づけてください");
+                log(`Write request: ${currentType}`);
+
+                await ndef.write({ records: [{ recordType: type, data: data }] });
+
+                showToast("書き込み完了！ ✅");
+                log(`Write Success: ${data.substring(0,20)}...`);
+            } catch (e) {
+                log(e.message, true);
+                showToast("エラー: " + e.message);
+            } finally {
+                const btn = document.getElementById('btn-exec-write');
+                btn.disabled = false;
+                btn.textContent = 'タグに書き込む';
+            }
+        };
+
+        // READ LOGIC
+        document.getElementById('btn-exec-read').onclick = async () => {
+            try {
+                const ndef = new NDEFReader();
+                await ndef.scan();
+                
+                document.getElementById('read-idle').classList.add('hidden');
+                document.getElementById('read-busy').classList.remove('hidden');
+                log("Scanning session started");
+
+                ndef.onreading = ({ message, serialNumber }) => {
+                    const logArea = document.getElementById('read-log');
+                    const card = document.createElement('div');
+                    card.className = "bg-white p-4 rounded-3xl shadow-sm border border-slate-100 animate-in fade-in slide-in-from-bottom-2";
+                    
+                    let inner = "";
+                    for (const record of message.records) {
+                        const decoder = new TextDecoder();
+                        const val = decoder.decode(record.data);
+                        inner += `<div class="mt-2 p-3 bg-slate-50 rounded-2xl border border-slate-50"><span class="text-[8px] font-black text-indigo-400 uppercase tracking-widest">${record.recordType}</span><p class="text-xs font-bold text-slate-700 whitespace-pre-wrap break-all mt-1">${val}</p></div>`;
+                    }
+                    card.innerHTML = `<div class="flex justify-between items-center px-1"><span class="text-[9px] font-mono text-slate-300 font-bold uppercase tracking-widest">ID: ${serialNumber}</span><span class="text-[9px] text-slate-300 font-bold">${new Date().toLocaleTimeString()}</span></div>${inner}`;
+                    logArea.prepend(card);
+                    showToast("タグ読み取り成功");
+                    log(`Scanned tag ID: ${serialNumber}`);
+                };
+            } catch (err) {
+                log(err.message, true);
+                showToast("スキャン開始失敗: " + err.message);
+            }
+        };
+    </script>
+</body>
+</html>
