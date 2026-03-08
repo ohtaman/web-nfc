@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>vCard NFC 書き込みテスト</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto; padding: 16px; background: #f5f5f5; }
+  h1 { font-size: 1.2em; margin-bottom: 8px; }
+  .desc { font-size: 0.85em; color: #666; margin-bottom: 16px; line-height: 1.5; }
+  .card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  .card h2 { font-size: 1em; margin-bottom: 12px; }
+  label { display: block; font-size: 0.85em; color: #555; margin-bottom: 4px; }
+  input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 1em; margin-bottom: 10px; }
+  button { width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 1em; font-weight: bold; cursor: pointer; margin-bottom: 8px; }
+  .btn-write { background: #9C27B0; color: #fff; }
+  .btn-write:disabled { background: #ccc; }
+  .btn-read { background: #FF9800; color: #fff; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75em; margin-left: 8px; }
+  .tag-exp { background: #FFF3E0; color: #E65100; }
+  .section-title { display: flex; align-items: center; }
+  #log { background: #1a1a2e; color: #0f0; border-radius: 8px; padding: 12px; font-family: monospace; font-size: 0.8em; min-height: 120px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+  details { margin-top: 8px; font-size: 0.85em; color: #666; }
+  details summary { cursor: pointer; }
+  details pre { background: #f0f0f0; padding: 8px; border-radius: 4px; margin-top: 4px; overflow-x: auto; font-size: 0.8em; }
+</style>
+</head>
+<body>
+
+<h1>vCard NFC 書き込みテスト</h1>
+<p class="desc">
+  vCard（連絡先データ）を NFC タグに書き込み、
+  Android / iPhone で連絡先保存ダイアログが表示されるか検証します。
+</p>
+
+<!-- vCard 書き込み -->
+<div class="card">
+  <div class="section-title">
+    <h2>① vCard（MIME: text/vcard）</h2>
+    <span class="tag tag-exp">実験的</span>
+  </div>
+  <p class="desc">連絡先情報を vCard 3.0 形式で NFC タグに書き込みます。</p>
+
+  <label>名前（必須）</label>
+  <input type="text" id="vc-name" placeholder="山田 太郎" oninput="updateVcardPreview()">
+
+  <label>メール</label>
+  <input type="email" id="vc-email" placeholder="taro@example.com" oninput="updateVcardPreview()">
+
+  <label>電話番号</label>
+  <input type="tel" id="vc-tel" placeholder="090-1234-5678" oninput="updateVcardPreview()">
+
+  <label>所属</label>
+  <input type="text" id="vc-org" placeholder="〇〇大学 / 〇〇株式会社" oninput="updateVcardPreview()">
+
+  <label>URL</label>
+  <input type="url" id="vc-url" placeholder="https://github.com/username" oninput="updateVcardPreview()">
+
+  <label>メモ</label>
+  <input type="text" id="vc-note" placeholder="ハッカソンで会いました" oninput="updateVcardPreview()">
+
+  <button class="btn-write" id="btn-vcard" onclick="writeVcard()">vCard で NFC に書き込み</button>
+
+  <details>
+    <summary>生成される vCard データ</summary>
+    <pre id="vcard-preview">名前を入力するとプレビューされます</pre>
+  </details>
+
+  <details>
+    <summary>バイトサイズ確認（タグ容量の参考に）</summary>
+    <pre id="vcard-size">-</pre>
+  </details>
+</div>
+
+<!-- 読み取り -->
+<div class="card">
+  <h2>② NFC タグを読み取る</h2>
+  <p class="desc">書き込んだタグの中身を確認します。</p>
+  <button class="btn-read" onclick="readTag()">読み取り開始</button>
+</div>
+
+<!-- ログ -->
+<div class="card">
+  <h2>ログ</h2>
+  <div id="log"></div>
+  <button style="margin-top:8px; background:#eee; color:#333;" onclick="clearLog()">クリア</button>
+</div>
+
+<script>
+function log(msg) {
+  const el = document.getElementById('log');
+  const time = new Date().toLocaleTimeString('ja-JP');
+  el.textContent += `[${time}] ${msg}\n`;
+  el.scrollTop = el.scrollHeight;
+}
+function clearLog() { document.getElementById('log').textContent = ''; }
+
+// --- vCard builder ---
+function buildVcard() {
+  const name = document.getElementById('vc-name').value.trim();
+  if (!name) return null;
+
+  const email = document.getElementById('vc-email').value.trim();
+  const tel = document.getElementById('vc-tel').value.trim();
+  const org = document.getElementById('vc-org').value.trim();
+  const url = document.getElementById('vc-url').value.trim();
+  const note = document.getElementById('vc-note').value.trim();
+
+  // vCard 3.0 format
+  let lines = [
+    'BEGIN:VCARD',
+    'VERSION:3.0',
+    `FN:${name}`,
+  ];
+
+  // N (structured name): try to split into family/given
+  const parts = name.split(/\s+/);
+  if (parts.length >= 2) {
+    lines.push(`N:${parts[0]};${parts.slice(1).join(' ')};;;`);
+  } else {
+    lines.push(`N:${name};;;;`);
+  }
+
+  if (email) lines.push(`EMAIL:${email}`);
+  if (tel) lines.push(`TEL:${tel}`);
+  if (org) lines.push(`ORG:${org}`);
+  if (url) lines.push(`URL:${url}`);
+  if (note) lines.push(`NOTE:${note}`);
+
+  lines.push('END:VCARD');
+
+  return lines.join('\r\n');
+}
+
+function updateVcardPreview() {
+  const vcard = buildVcard();
+  const previewEl = document.getElementById('vcard-preview');
+  const sizeEl = document.getElementById('vcard-size');
+
+  if (!vcard) {
+    previewEl.textContent = '名前を入力するとプレビューされます';
+    sizeEl.textContent = '-';
+    return;
+  }
+
+  previewEl.textContent = vcard;
+  const bytes = new TextEncoder().encode(vcard).length;
+  sizeEl.textContent = `${bytes} bytes\nNTAG213: ${bytes <= 144 ? '✅ OK' : '❌ 超過'} (144B)\nNTAG215: ${bytes <= 504 ? '✅ OK' : '❌ 超過'} (504B)\nNTAG216: ${bytes <= 888 ? '✅ OK' : '❌ 超過'} (888B)`;
+}
+
+// --- NFC ---
+const hasNFC = ('NDEFReader' in window);
+if (!hasNFC) {
+  log('⚠ Web NFC 非対応ブラウザです');
+  document.getElementById('btn-vcard').disabled = true;
+}
+
+async function writeVcard() {
+  const vcard = buildVcard();
+  if (!vcard) { log('❌ 名前を入力してください'); return; }
+
+  const encoded = new TextEncoder().encode(vcard);
+  log(`vCard 構築完了 (${encoded.length} bytes)`);
+  log(`内容:\n${vcard}`);
+
+  try {
+    const writer = new NDEFReader();
+    log('📡 NFC タグをかざしてください...');
+    await writer.write({
+      records: [{
+        recordType: "mime",
+        mediaType: "text/vcard",
+        data: encoded.buffer
+      }]
+    });
+    log('✅ vCard 書き込み完了！');
+    log('→ タグをかざして連絡先保存ダイアログが出るか確認してください');
+  } catch (e) {
+    log(`❌ エラー: ${e.name}: ${e.message}`);
+  }
+}
+
+async function readTag() {
+  try {
+    const reader = new NDEFReader();
+    log('📡 読み取り待機中...');
+    await reader.scan();
+
+    reader.addEventListener('reading', (event) => {
+      const { serialNumber, message } = event;
+      log(`--- タグ検出 ---`);
+      log(`Serial: ${serialNumber}`);
+      log(`レコード数: ${message.records.length}`);
+
+      for (let i = 0; i < message.records.length; i++) {
+        const r = message.records[i];
+        log(`\n[Record ${i}]`);
+        log(`  recordType: ${r.recordType}`);
+        log(`  mediaType: ${r.mediaType || '(none)'}`);
+
+        if (r.data) {
+          const bytes = new Uint8Array(r.data.buffer);
+          log(`  data size: ${bytes.length} bytes`);
+          try {
+            const text = new TextDecoder().decode(r.data);
+            log(`  content:\n${text}`);
+          } catch (_) {
+            log(`  hex: ${Array.from(bytes).map(b => b.toString(16).padStart(2,'0')).join(' ')}`);
+          }
+        }
+      }
+      log(`--- 読み取り完了 ---\n`);
+    });
+  } catch (e) {
+    log(`❌ エラー: ${e.name}: ${e.message}`);
+  }
+}
+</script>
+</body>
+</html>

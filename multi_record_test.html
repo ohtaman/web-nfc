@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>複数レコード NFC 書き込みテスト</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto; padding: 16px; background: #f5f5f5; }
+  h1 { font-size: 1.2em; margin-bottom: 8px; }
+  .desc { font-size: 0.85em; color: #666; margin-bottom: 16px; line-height: 1.5; }
+  .card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  .card h2 { font-size: 1em; margin-bottom: 8px; }
+  label { display: block; font-size: 0.85em; color: #555; margin-bottom: 4px; margin-top: 8px; }
+  input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 1em; margin-bottom: 4px; }
+  button { width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 1em; font-weight: bold; cursor: pointer; margin-bottom: 8px; }
+  .btn-1 { background: #4CAF50; color: #fff; }
+  .btn-2 { background: #2196F3; color: #fff; }
+  .btn-3 { background: #9C27B0; color: #fff; }
+  .btn-read { background: #FF9800; color: #fff; }
+  button:disabled { background: #ccc; }
+  #log { background: #1a1a2e; color: #0f0; border-radius: 8px; padding: 12px; font-family: monospace; font-size: 0.8em; min-height: 150px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75em; background: #E3F2FD; color: #1565C0; margin-left: 4px; }
+  .section-title { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+  .check { font-size: 0.8em; color: #666; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<h1>複数レコード NFC テスト</h1>
+<p class="desc">
+  Web NFC API の <code>write()</code> で <code>records</code> 配列に複数レコードを入れて、
+  正しく書き込み・読み取りできるか検証します。
+  記事の「Wi-Fi + URL のクロスプラットフォーム戦略」の前提確認です。
+</p>
+
+<!-- テスト1: WSC + URL -->
+<div class="card">
+  <div class="section-title">
+    <h2>① Wi-Fi (WSC) + URL</h2>
+    <span class="tag">記事の核心</span>
+  </div>
+  <p class="desc">Android → Wi-Fi 自動接続、iPhone → URL が開く、を1枚のタグで実現できるか</p>
+  <label>SSID</label>
+  <input type="text" id="t1-ssid" placeholder="MyNetwork">
+  <label>パスワード</label>
+  <input type="text" id="t1-pass" placeholder="MyPassword">
+  <label>URL（iPhone 向けフォールバック）</label>
+  <input type="url" id="t1-url" placeholder="https://ohtaman.github.io/web-nfc/">
+  <button class="btn-1" onclick="writeTest1()">WSC + URL を書き込み</button>
+  <p class="check">確認: Android → Wi-Fi 接続？ iPhone → URL が開く？</p>
+</div>
+
+<!-- テスト2: URL + URL -->
+<div class="card">
+  <div class="section-title">
+    <h2>② URL + URL（2つ）</h2>
+  </div>
+  <p class="desc">複数の URL レコードを入れたとき、どちらが開くか</p>
+  <label>URL 1（最初のレコード）</label>
+  <input type="url" id="t2-url1" placeholder="https://example.com/first">
+  <label>URL 2（2番目のレコード）</label>
+  <input type="url" id="t2-url2" placeholder="https://example.com/second">
+  <button class="btn-2" onclick="writeTest2()">URL × 2 を書き込み</button>
+  <p class="check">確認: 最初の URL が開く？両方通知される？</p>
+</div>
+
+<!-- テスト3: BT OOB + URL -->
+<div class="card">
+  <div class="section-title">
+    <h2>③ Bluetooth OOB + URL</h2>
+  </div>
+  <p class="desc">Bluetooth ペアリング + iPhone 向け URL フォールバック</p>
+  <label>MAC アドレス</label>
+  <input type="text" id="t3-mac" placeholder="AA:BB:CC:DD:EE:FF" maxlength="17" oninput="formatMac(this)">
+  <label>URL（iPhone 向けフォールバック）</label>
+  <input type="url" id="t3-url" placeholder="https://example.com">
+  <button class="btn-3" onclick="writeTest3()">BT OOB + URL を書き込み</button>
+  <p class="check">確認: Android → BT ペアリング？ iPhone → URL？</p>
+</div>
+
+<!-- 読み取り -->
+<div class="card">
+  <h2>読み取り（レコード構造の確認）</h2>
+  <p class="desc">書き込んだタグの全レコードを表示します。</p>
+  <button class="btn-read" onclick="readTag()">読み取り開始</button>
+</div>
+
+<!-- ログ -->
+<div class="card">
+  <h2>ログ</h2>
+  <div id="log"></div>
+  <button style="margin-top:8px; background:#eee; color:#333;" onclick="clearLog()">クリア</button>
+</div>
+
+<script>
+function log(msg) {
+  const el = document.getElementById('log');
+  const time = new Date().toLocaleTimeString('ja-JP');
+  el.textContent += `[${time}] ${msg}\n`;
+  el.scrollTop = el.scrollHeight;
+}
+function clearLog() { document.getElementById('log').textContent = ''; }
+
+function toHex(buf) {
+  return Array.from(buf).map(b => b.toString(16).padStart(2, '0')).join(' ');
+}
+
+function formatMac(input) {
+  let v = input.value.replace(/[^0-9a-fA-F]/g, '').toUpperCase();
+  let f = '';
+  for (let i = 0; i < v.length && i < 12; i++) {
+    if (i > 0 && i % 2 === 0) f += ':';
+    f += v[i];
+  }
+  input.value = f;
+}
+
+function parseMac(str) {
+  const hex = str.replace(/[^0-9a-fA-F]/g, '');
+  if (hex.length !== 12) return null;
+  const b = new Uint8Array(6);
+  for (let i = 0; i < 6; i++) b[i] = parseInt(hex.substring(i*2, i*2+2), 16);
+  return b;
+}
+
+// --- WSC builder ---
+function wscTlv(type, value) {
+  const buf = new Uint8Array(4 + value.length);
+  buf[0] = (type >> 8) & 0xFF; buf[1] = type & 0xFF;
+  buf[2] = (value.length >> 8) & 0xFF; buf[3] = value.length & 0xFF;
+  buf.set(value, 4);
+  return buf;
+}
+function wscConcat(arrays) {
+  const r = new Uint8Array(arrays.reduce((s, a) => s + a.length, 0));
+  let off = 0;
+  for (const a of arrays) { r.set(a, off); off += a.length; }
+  return r;
+}
+function buildWSC(ssid, pass) {
+  const enc = new TextEncoder();
+  return wscTlv(0x100E, wscConcat([
+    wscTlv(0x1026, new Uint8Array([0x01])),
+    wscTlv(0x1045, enc.encode(ssid)),
+    wscTlv(0x1003, new Uint8Array([0x00, 0x20])),
+    wscTlv(0x100F, new Uint8Array([0x00, 0x08])),
+    wscTlv(0x1027, enc.encode(pass)),
+    wscTlv(0x1020, new Uint8Array([0xFF,0xFF,0xFF,0xFF,0xFF,0xFF])),
+  ]));
+}
+
+// --- BT OOB builder ---
+function buildEir(type, data) {
+  const buf = new Uint8Array(2 + data.length);
+  buf[0] = 1 + data.length; buf[1] = type;
+  buf.set(data, 2);
+  return buf;
+}
+function buildBtOob(macBytes) {
+  const macLE = new Uint8Array([...macBytes].reverse());
+  const totalLen = 2 + macLE.length;
+  const result = new Uint8Array(totalLen);
+  result[0] = totalLen & 0xFF;
+  result[1] = (totalLen >> 8) & 0xFF;
+  result.set(macLE, 2);
+  return result;
+}
+
+// --- NFC ---
+const hasNFC = ('NDEFReader' in window);
+if (!hasNFC) log('⚠ Web NFC 非対応ブラウザです');
+
+async function writeRecords(records, label) {
+  if (!hasNFC) { log('❌ Web NFC 非対応'); return; }
+  log(`\n=== ${label} ===`);
+  log(`レコード数: ${records.length}`);
+  records.forEach((r, i) => {
+    log(`  [${i}] recordType: ${r.recordType}${r.mediaType ? ', mediaType: ' + r.mediaType : ''}`);
+    if (typeof r.data === 'string') log(`      data: ${r.data}`);
+    else if (r.data instanceof ArrayBuffer) log(`      data: ${new Uint8Array(r.data).length} bytes`);
+  });
+
+  try {
+    const writer = new NDEFReader();
+    log('📡 NFC タグをかざしてください...');
+    await writer.write({ records });
+    log('✅ 書き込み完了！');
+  } catch (e) {
+    log(`❌ エラー: ${e.name}: ${e.message}`);
+  }
+}
+
+// テスト1: WSC + URL
+function writeTest1() {
+  const ssid = document.getElementById('t1-ssid').value.trim();
+  const pass = document.getElementById('t1-pass').value;
+  const url = document.getElementById('t1-url').value.trim();
+  if (!ssid || !url) { log('❌ SSID と URL を入力してください'); return; }
+
+  const wsc = buildWSC(ssid, pass);
+  writeRecords([
+    { recordType: "mime", mediaType: "application/vnd.wfa.wsc", data: wsc.buffer },
+    { recordType: "url", data: url }
+  ], 'WSC + URL');
+}
+
+// テスト2: URL + URL
+function writeTest2() {
+  const url1 = document.getElementById('t2-url1').value.trim();
+  const url2 = document.getElementById('t2-url2').value.trim();
+  if (!url1 || !url2) { log('❌ 両方の URL を入力してください'); return; }
+
+  writeRecords([
+    { recordType: "url", data: url1 },
+    { recordType: "url", data: url2 }
+  ], 'URL × 2');
+}
+
+// テスト3: BT OOB + URL
+function writeTest3() {
+  const mac = parseMac(document.getElementById('t3-mac').value);
+  const url = document.getElementById('t3-url').value.trim();
+  if (!mac) { log('❌ MAC アドレスを正しく入力してください'); return; }
+  if (!url) { log('❌ URL を入力してください'); return; }
+
+  const oob = buildBtOob(mac);
+  writeRecords([
+    { recordType: "mime", mediaType: "application/vnd.bluetooth.ep.oob", data: oob.buffer },
+    { recordType: "url", data: url }
+  ], 'BT OOB + URL');
+}
+
+// 読み取り
+async function readTag() {
+  if (!hasNFC) { log('❌ Web NFC 非対応'); return; }
+  try {
+    const reader = new NDEFReader();
+    log('\n📡 読み取り待機中...');
+    await reader.scan();
+
+    reader.addEventListener('reading', (event) => {
+      const { serialNumber, message } = event;
+      log(`\n=== タグ検出 ===`);
+      log(`Serial: ${serialNumber}`);
+      log(`レコード数: ${message.records.length}`);
+
+      for (let i = 0; i < message.records.length; i++) {
+        const r = message.records[i];
+        log(`\n[Record ${i}]`);
+        log(`  recordType: ${r.recordType}`);
+        log(`  mediaType: ${r.mediaType || '(none)'}`);
+        log(`  encoding: ${r.encoding || '(none)'}`);
+
+        if (r.data) {
+          const bytes = new Uint8Array(r.data.buffer);
+          log(`  size: ${bytes.length} bytes`);
+
+          if (r.recordType === 'url' || r.recordType === 'text') {
+            try {
+              log(`  content: ${new TextDecoder().decode(r.data)}`);
+            } catch (_) {
+              log(`  hex: ${toHex(bytes).substring(0, 60)}`);
+            }
+          } else {
+            log(`  hex: ${toHex(bytes).substring(0, 80)}${bytes.length > 26 ? '...' : ''}`);
+          }
+        }
+      }
+      log(`=== 読み取り完了 ===\n`);
+    });
+  } catch (e) {
+    log(`❌ エラー: ${e.name}: ${e.message}`);
+  }
+}
+</script>
+</body>
+</html>

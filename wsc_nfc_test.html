@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WSC NFC 書き込みテスト</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto; padding: 16px; background: #f5f5f5; }
+  h1 { font-size: 1.2em; margin-bottom: 8px; }
+  .desc { font-size: 0.85em; color: #666; margin-bottom: 16px; line-height: 1.5; }
+  .card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  .card h2 { font-size: 1em; margin-bottom: 12px; }
+  label { display: block; font-size: 0.85em; color: #555; margin-bottom: 4px; }
+  input, select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 1em; margin-bottom: 10px; }
+  button { width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 1em; font-weight: bold; cursor: pointer; margin-bottom: 8px; }
+  .btn-write { background: #4CAF50; color: #fff; }
+  .btn-write:disabled { background: #ccc; }
+  .btn-text { background: #2196F3; color: #fff; }
+  .btn-read { background: #FF9800; color: #fff; }
+  #log { background: #1a1a2e; color: #0f0; border-radius: 8px; padding: 12px; font-family: monospace; font-size: 0.8em; min-height: 120px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75em; margin-left: 8px; }
+  .tag-exp { background: #FFF3E0; color: #E65100; }
+  .section-title { display: flex; align-items: center; }
+  details { margin-top: 8px; font-size: 0.85em; color: #666; }
+  details summary { cursor: pointer; }
+  details pre { background: #f0f0f0; padding: 8px; border-radius: 4px; margin-top: 4px; overflow-x: auto; font-size: 0.8em; }
+</style>
+</head>
+<body>
+
+<h1>WSC NFC 書き込みテスト</h1>
+<p class="desc">
+  Wi-Fi Simple Configuration (WSC) バイナリを構築して NFC タグに書き込むテスト。
+  Android + Chrome で動作します。
+</p>
+
+<!-- WSC (MIME) 書き込み -->
+<div class="card">
+  <div class="section-title">
+    <h2>① WSC バイナリで書き込み</h2>
+    <span class="tag tag-exp">実験的</span>
+  </div>
+  <p class="desc">application/vnd.wfa.wsc の MIME レコードとして書き込みます。Android が WSC として認識すれば Wi-Fi 自動接続されるはず。</p>
+  <label>SSID</label>
+  <input type="text" id="wsc-ssid" placeholder="MyNetwork">
+  <label>パスワード</label>
+  <input type="text" id="wsc-pass" placeholder="MyPassword">
+  <label>認証方式</label>
+  <select id="wsc-auth">
+    <option value="wpa2-personal">WPA2-Personal</option>
+    <option value="wpa-personal">WPA-Personal</option>
+    <option value="open">Open (認証なし)</option>
+  </select>
+  <button class="btn-write" id="btn-wsc" onclick="writeWSC()">WSC で NFC に書き込み</button>
+  <details>
+    <summary>構築されるバイナリ（hex）</summary>
+    <pre id="wsc-hex">入力するとここにプレビューされます</pre>
+  </details>
+</div>
+
+<!-- テキスト形式（比較用） -->
+<div class="card">
+  <h2>② テキスト形式で書き込み（比較用）</h2>
+  <p class="desc">WIFI:S:...;T:WPA;P:...;; を text レコードとして書き込みます。QR コード用のフォーマットなので、NFC 経由では自動接続されない可能性が高い。</p>
+  <button class="btn-text" id="btn-text" onclick="writeText()">テキストで NFC に書き込み</button>
+</div>
+
+<!-- 読み取り -->
+<div class="card">
+  <h2>③ NFC タグを読み取る</h2>
+  <p class="desc">書き込んだタグの中身を確認します。レコードタイプ、MIME タイプ、データを表示します。</p>
+  <button class="btn-read" onclick="readTag()">読み取り開始</button>
+</div>
+
+<!-- ログ -->
+<div class="card">
+  <h2>ログ</h2>
+  <div id="log"></div>
+  <button style="margin-top:8px; background:#eee; color:#333;" onclick="clearLog()">クリア</button>
+</div>
+
+<script>
+// --- Log ---
+function log(msg) {
+  const el = document.getElementById('log');
+  const time = new Date().toLocaleTimeString('ja-JP');
+  el.textContent += `[${time}] ${msg}\n`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function clearLog() {
+  document.getElementById('log').textContent = '';
+}
+
+// --- TLV Builder ---
+function tlv(type, value) {
+  const buf = new Uint8Array(4 + value.length);
+  buf[0] = (type >> 8) & 0xFF;
+  buf[1] = type & 0xFF;
+  buf[2] = (value.length >> 8) & 0xFF;
+  buf[3] = value.length & 0xFF;
+  buf.set(value, 4);
+  return buf;
+}
+
+function concat(arrays) {
+  const len = arrays.reduce((s, a) => s + a.length, 0);
+  const r = new Uint8Array(len);
+  let off = 0;
+  for (const a of arrays) { r.set(a, off); off += a.length; }
+  return r;
+}
+
+function toHex(buf) {
+  return Array.from(buf).map(b => b.toString(16).padStart(2, '0')).join(' ');
+}
+
+function getAuthEncBytes(authType) {
+  switch (authType) {
+    case 'wpa2-personal': return { auth: [0x00, 0x20], enc: [0x00, 0x08] }; // WPA2-PSK, AES
+    case 'wpa-personal':  return { auth: [0x00, 0x02], enc: [0x00, 0x04] }; // WPA-PSK, TKIP
+    case 'open':          return { auth: [0x00, 0x01], enc: [0x00, 0x01] }; // Open, None
+    default:              return { auth: [0x00, 0x20], enc: [0x00, 0x08] };
+  }
+}
+
+function buildWSC(ssid, password, authType) {
+  const enc = new TextEncoder();
+  const ssidBytes = enc.encode(ssid);
+  const passBytes = enc.encode(password);
+  const { auth, enc: encType } = getAuthEncBytes(authType);
+
+  const innerTlvs = [
+    tlv(0x1026, new Uint8Array([0x01])),                          // Network Index
+    tlv(0x1045, ssidBytes),                                        // SSID
+    tlv(0x1003, new Uint8Array(auth)),                             // Authentication Type
+    tlv(0x100F, new Uint8Array(encType)),                          // Encryption Type
+    tlv(0x1027, passBytes),                                        // Network Key
+    tlv(0x1020, new Uint8Array([0xFF,0xFF,0xFF,0xFF,0xFF,0xFF])), // MAC Address (broadcast)
+  ];
+
+  const credential = tlv(0x100E, concat(innerTlvs));
+  return credential;
+}
+
+// --- Hex preview ---
+function updateHexPreview() {
+  const ssid = document.getElementById('wsc-ssid').value;
+  const pass = document.getElementById('wsc-pass').value;
+  const auth = document.getElementById('wsc-auth').value;
+  if (!ssid) {
+    document.getElementById('wsc-hex').textContent = '入力するとここにプレビューされます';
+    return;
+  }
+  const data = buildWSC(ssid, pass || '', auth);
+  document.getElementById('wsc-hex').textContent =
+    `Size: ${data.length} bytes\n${toHex(data)}`;
+}
+
+document.getElementById('wsc-ssid').addEventListener('input', updateHexPreview);
+document.getElementById('wsc-pass').addEventListener('input', updateHexPreview);
+document.getElementById('wsc-auth').addEventListener('change', updateHexPreview);
+
+// --- NFC check ---
+const hasNFC = ('NDEFReader' in window);
+if (!hasNFC) {
+  log('⚠ Web NFC 非対応ブラウザです（Android Chrome 89+ が必要）');
+  document.getElementById('btn-wsc').disabled = true;
+  document.getElementById('btn-text').disabled = true;
+}
+
+// --- Write WSC ---
+async function writeWSC() {
+  const ssid = document.getElementById('wsc-ssid').value.trim();
+  const pass = document.getElementById('wsc-pass').value;
+  const auth = document.getElementById('wsc-auth').value;
+
+  if (!ssid) { log('❌ SSID を入力してください'); return; }
+
+  const wscData = buildWSC(ssid, pass, auth);
+  log(`WSC バイナリ構築完了 (${wscData.length} bytes)`);
+  log(`Hex: ${toHex(wscData).substring(0, 60)}...`);
+
+  try {
+    const writer = new NDEFReader();
+    log('📡 NFC タグをかざしてください...');
+    await writer.write({
+      records: [{
+        recordType: "mime",
+        mediaType: "application/vnd.wfa.wsc",
+        data: wscData.buffer
+      }]
+    });
+    log('✅ WSC レコード書き込み完了！');
+    log('→ タグを読み取って自動接続されるか確認してください');
+  } catch (e) {
+    log(`❌ エラー: ${e.name}: ${e.message}`);
+  }
+}
+
+// --- Write Text (comparison) ---
+async function writeText() {
+  const ssid = document.getElementById('wsc-ssid').value.trim();
+  const pass = document.getElementById('wsc-pass').value;
+
+  if (!ssid) { log('❌ SSID を入力してください'); return; }
+
+  const wifiString = `WIFI:S:${ssid};T:WPA;P:${pass};;`;
+  log(`テキスト形式: ${wifiString}`);
+
+  try {
+    const writer = new NDEFReader();
+    log('📡 NFC タグをかざしてください...');
+    await writer.write({
+      records: [{
+        recordType: "text",
+        data: wifiString
+      }]
+    });
+    log('✅ テキストレコード書き込み完了！');
+    log('→ タグを読み取って自動接続されるか確認してください');
+  } catch (e) {
+    log(`❌ エラー: ${e.name}: ${e.message}`);
+  }
+}
+
+// --- Read ---
+async function readTag() {
+  try {
+    const reader = new NDEFReader();
+    log('📡 読み取り待機中...');
+    await reader.scan();
+
+    reader.addEventListener('reading', (event) => {
+      const { serialNumber, message } = event;
+      log(`--- タグ検出 ---`);
+      log(`Serial: ${serialNumber}`);
+      log(`レコード数: ${message.records.length}`);
+
+      for (let i = 0; i < message.records.length; i++) {
+        const r = message.records[i];
+        log(`\n[Record ${i}]`);
+        log(`  recordType: ${r.recordType}`);
+        log(`  mediaType: ${r.mediaType || '(none)'}`);
+        log(`  encoding: ${r.encoding || '(none)'}`);
+        log(`  lang: ${r.lang || '(none)'}`);
+
+        if (r.data) {
+          const bytes = new Uint8Array(r.data.buffer);
+          log(`  data size: ${bytes.length} bytes`);
+          log(`  hex: ${toHex(bytes).substring(0, 80)}${bytes.length > 26 ? '...' : ''}`);
+
+          // テキストとして読めるか試す
+          try {
+            const text = new TextDecoder().decode(r.data);
+            if (text.length < 200 && /^[\x20-\x7e\u3000-\u9fff]+$/.test(text)) {
+              log(`  text: ${text}`);
+            }
+          } catch (_) {}
+        }
+      }
+      log(`--- 読み取り完了 ---\n`);
+    });
+  } catch (e) {
+    log(`❌ エラー: ${e.name}: ${e.message}`);
+  }
+}
+</script>
+</body>
+</html>

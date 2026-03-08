@@ -1,0 +1,683 @@
+<html lang="ja"><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web NFC Tool</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        :root {
+            --indigo: #4f46e5;
+            --indigo-light: #eef2ff;
+            --indigo-ring: #c7d2fe;
+            --slate-50: #f8fafc;
+            --slate-100: #f1f5f9;
+            --slate-200: #e2e8f0;
+            --slate-300: #cbd5e1;
+            --slate-400: #94a3b8;
+            --slate-500: #64748b;
+            --slate-700: #334155;
+            --slate-800: #1e293b;
+            --slate-900: #0f172a;
+            --amber-50: #fffbeb;
+            --amber-600: #d97706;
+            --amber-800: #92400e;
+            --blue-50: #eff6ff;
+            --blue-700: #1d4ed8;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--slate-50); color: var(--slate-900); min-height: 100vh; padding-bottom: 60px; }
+        .container { max-width: 480px; margin: 0 auto; padding: 16px; }
+
+        /* Header */
+        .header { text-align: center; padding: 24px 0; }
+        .header-icon { display: inline-flex; align-items: center; justify-content: center; width: 64px; height: 64px; background: linear-gradient(135deg, var(--indigo), #2563eb); border-radius: 20px; margin-bottom: 12px; box-shadow: 0 8px 24px rgba(79,70,229,0.25); }
+        .header-icon svg { width: 32px; height: 32px; color: white; }
+        .header h1 { font-size: 22px; font-weight: 900; color: var(--slate-800); }
+        .header-sub { font-size: 10px; color: var(--slate-400); font-weight: 700; text-transform: uppercase; letter-spacing: 2px; margin-top: 4px; }
+
+        /* Tabs */
+        .tabs { display: flex; background: var(--slate-200); padding: 4px; border-radius: 16px; margin-bottom: 16px; }
+        .tab { flex: 1; padding: 10px; text-align: center; font-size: 12px; font-weight: 900; border-radius: 12px; border: none; cursor: pointer; transition: all 0.2s; background: transparent; color: var(--slate-500); }
+        .tab.active { background: white; color: var(--indigo); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+
+        /* Cards */
+        .card { background: white; border-radius: 20px; padding: 20px; margin-bottom: 12px; border: 1px solid var(--slate-100); box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+
+        /* Type grid */
+        .type-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 20px; }
+        .type-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 4px; border-radius: 14px; border: 2px solid var(--slate-100); background: white; cursor: pointer; transition: all 0.15s; gap: 4px; }
+        .type-btn:hover { border-color: var(--indigo-ring); }
+        .type-btn.selected { background: var(--indigo-light); border-color: var(--indigo); color: var(--indigo); box-shadow: 0 0 0 3px rgba(79,70,229,0.1); }
+        .type-btn .icon { font-size: 24px; line-height: 1; }
+        .type-btn .label { font-size: 11px; font-weight: 800; color: var(--slate-500); }
+        .type-btn.selected .label { color: var(--indigo); }
+
+        /* Form */
+        .form-area { display: flex; flex-direction: column; gap: 12px; }
+        .field-group { display: flex; flex-direction: column; gap: 4px; }
+        .field-label { font-size: 11px; font-weight: 700; color: var(--slate-400); text-transform: uppercase; letter-spacing: 0.5px; }
+        .field { width: 100%; padding: 12px 14px; background: var(--slate-50); border: 1.5px solid var(--slate-200); border-radius: 12px; font-size: 15px; color: var(--slate-800); outline: none; transition: border-color 0.15s, box-shadow 0.15s; font-family: inherit; }
+        .field:focus { border-color: var(--indigo); box-shadow: 0 0 0 3px rgba(79,70,229,0.1); }
+        .field::placeholder { color: var(--slate-300); }
+        .field-mono { font-family: "SF Mono", "Fira Code", monospace; letter-spacing: 1px; }
+        textarea.field { min-height: 80px; resize: vertical; }
+        .hint { font-size: 11px; color: var(--slate-400); line-height: 1.5; }
+
+        /* Fallback option */
+        .fallback-box { background: var(--amber-50); border-radius: 12px; padding: 12px; margin-top: 12px; display: none; }
+        .fallback-box.show { display: block; }
+        .fallback-box label { display: flex; gap: 8px; cursor: pointer; align-items: flex-start; }
+        .fallback-box input[type="checkbox"] { margin-top: 2px; accent-color: var(--amber-600); }
+        .fallback-box .hint { color: var(--amber-800); }
+        .fallback-box .field { margin-top: 8px; }
+
+        /* Size indicator */
+        .size-info { text-align: right; font-size: 11px; color: var(--slate-400); margin-top: 4px; min-height: 16px; }
+
+        /* Buttons */
+        .btn { width: 100%; padding: 16px; border: none; border-radius: 16px; font-size: 15px; font-weight: 800; cursor: pointer; transition: all 0.15s; }
+        .btn:active { transform: scale(0.97); }
+        .btn-primary { background: var(--slate-900); color: white; box-shadow: 0 4px 12px rgba(15,23,42,0.2); margin-top: 16px; }
+        .btn-primary:disabled { background: var(--slate-300); box-shadow: none; cursor: default; }
+        .btn-indigo { background: var(--indigo); color: white; box-shadow: 0 4px 12px rgba(79,70,229,0.25); }
+
+        /* QR Section */
+        .qr-card { text-align: center; display: none; }
+        .qr-card.show { display: block; }
+        .qr-card .qr-title { font-size: 13px; font-weight: 700; color: var(--slate-700); margin-bottom: 4px; }
+        .qr-wrap { display: inline-block; padding: 12px; background: white; border-radius: 16px; border: 1px solid var(--slate-100); margin: 8px 0; }
+        .qr-iphone-hint { background: var(--blue-50); border-radius: 12px; padding: 10px 12px; margin-top: 12px; }
+        .qr-iphone-hint p { font-size: 11px; color: var(--blue-700); line-height: 1.5; }
+
+        /* Read section */
+        .read-center { text-align: center; padding: 24px 0; }
+        .read-center .emoji { font-size: 48px; margin-bottom: 12px; }
+        .read-center h3 { font-size: 18px; font-weight: 900; color: var(--slate-800); }
+        .read-center .sub { font-size: 10px; color: var(--slate-400); font-weight: 700; text-transform: uppercase; letter-spacing: 2px; margin-top: 4px; margin-bottom: 20px; }
+        .scan-anim { width: 72px; height: 72px; background: var(--indigo); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; animation: pulse 2s cubic-bezier(0.4,0,0.6,1) infinite; box-shadow: 0 8px 24px rgba(79,70,229,0.25); }
+        @keyframes pulse { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:.5; transform:scale(1.05); } }
+        .scan-anim .emoji { font-size: 32px; margin: 0; }
+
+        /* Read results */
+        .read-results { display: flex; flex-direction: column; gap: 12px; }
+        .result-card { background: white; padding: 16px; border-radius: 16px; border: 1px solid var(--slate-100); }
+        .result-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .result-id { font-size: 10px; font-weight: 800; color: var(--slate-400); font-family: monospace; }
+        .result-time { font-size: 10px; color: var(--slate-300); font-weight: 700; }
+        .record-item { margin-top: 8px; padding: 10px 12px; background: var(--slate-50); border-radius: 12px; }
+        .record-type { font-size: 10px; font-weight: 900; color: var(--indigo); text-transform: uppercase; }
+        .record-content { font-size: 13px; font-weight: 600; color: var(--slate-700); word-break: break-all; white-space: pre-wrap; margin-top: 4px; }
+        .record-extra { font-size: 11px; color: var(--slate-400); margin-top: 2px; }
+
+        /* NFC unsupported */
+        .nfc-warn { text-align: center; font-size: 12px; color: var(--amber-600); margin-top: 8px; display: none; }
+        .nfc-warn.show { display: block; }
+
+        /* Toast */
+        .toast { position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%) translateY(40px); padding: 12px 24px; border-radius: 16px; background: var(--slate-900); color: white; font-size: 12px; font-weight: 700; box-shadow: 0 8px 32px rgba(0,0,0,0.2); opacity: 0; transition: all 0.3s; pointer-events: none; z-index: 100; white-space: nowrap; }
+        .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+    <div class="container">
+
+        <!-- Header -->
+        <header class="header">
+            <div class="header-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4" />
+                </svg>
+            </div>
+            <h1>Web NFC Tool</h1>
+            <p class="header-sub">Read &amp; Write NFC Tags from your browser</p>
+        </header>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab active" id="tab-write" onclick="switchTab('write')">WRITE</button>
+            <button class="tab" id="tab-read" onclick="switchTab('read')">READ</button>
+        </div>
+
+        <!-- ===== WRITE ===== -->
+        <section id="sec-write">
+            <div class="card">
+                <div class="type-grid">
+                    <button class="type-btn selected" id="tbtn-url" onclick="selectType('url')"><span class="icon">🔗</span><span class="label">URL</span></button>
+                    <button class="type-btn" id="tbtn-text" onclick="selectType('text')"><span class="icon">📄</span><span class="label">TEXT</span></button>
+                    <button class="type-btn" id="tbtn-wifi" onclick="selectType('wifi')"><span class="icon">📶</span><span class="label">Wi-Fi</span></button>
+                    <button class="type-btn" id="tbtn-bt" onclick="selectType('bt')"><span class="icon">🎧</span><span class="label">BT</span></button>
+                    <button class="type-btn" id="tbtn-vcard" onclick="selectType('vcard')"><span class="icon">👤</span><span class="label">vCard</span></button>
+                </div>
+
+                <div id="form-area" class="form-area"></div>
+
+                <div id="fallback-option" class="fallback-box">
+                    <label>
+                        <input type="checkbox" id="cb-fallback" checked>
+                        <span class="hint"><strong>iPhone 向け QR ページも書き込む</strong><br>iPhone でタップすると Wi-Fi / BT の QR コードページが開きます</span>
+                    </label>
+                </div>
+
+                <div id="size-indicator" class="size-info"></div>
+
+                <button class="btn btn-primary" id="btn-write">書き込み開始</button>
+                <p id="nfc-warn-write" class="nfc-warn">⚠ NFC 書き込みには Android 版 Chrome（HTTPS）が必要です</p>
+            </div>
+
+            <!-- QR Code -->
+            <div class="card qr-card" id="qr-section">
+                <p class="qr-title">QR コード</p>
+                <p id="qr-hint" class="hint"></p>
+                <div class="qr-wrap"><div id="qr-container"></div></div>
+                <div class="qr-iphone-hint">
+                    <p>💡 <strong>iPhone の方：</strong>QR コードを長押しすると接続できます（カメラ読み取りも可）</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== READ ===== -->
+        <section id="sec-read" class="hidden">
+            <div class="card">
+                <div id="read-idle" class="read-center hidden">
+                    <div class="emoji">📡</div>
+                    <h3>Scanner</h3>
+                    <p class="sub">タグの全レコードを解析して表示します</p>
+                    <button class="btn btn-indigo" id="btn-read">スキャン開始</button>
+                </div>
+                <div id="read-scanning" class="read-center hidden">
+                    <div class="scan-anim"><span class="emoji">📳</span></div>
+                    <h3 style="color:var(--indigo)">Scanning...</h3>
+                    <p class="sub">タグをデバイスの背面に近づけてください</p>
+                    <button class="btn" style="margin-top:12px;background:var(--slate-200);color:var(--slate-700);" onclick="stopScan()">スキャン停止</button>
+                </div>
+                <div id="read-unsupported" class="read-center hidden">
+                    <div class="emoji">🚫</div>
+                    <h3>Web NFC 非対応</h3>
+                    <p class="hint" style="margin-top:8px">読み取りには Android 版 Chrome（HTTPS）が必要です。</p>
+                </div>
+            </div>
+            <div id="read-results" class="read-results"></div>
+        </section>
+    </div>
+
+        <!-- ===== SHARED LANDING (fragment mode) ===== -->
+        <section id="sec-shared" class="hidden">
+            <div class="card" style="text-align:center;">
+                <div id="shared-info"></div>
+                <div id="shared-qr-area">
+                    <div class="qr-wrap" style="margin:16px auto; position:relative; cursor:pointer;">
+                        <div id="shared-qr"></div>
+                    </div>
+                    <p style="font-size:15px;font-weight:800;color:var(--slate-800);margin-top:8px;">👆 QR コードを長押しして接続</p>
+                    <p class="hint" style="margin-top:4px;">カメラアプリで読み取っても接続できます</p>
+                </div>
+                <p class="hint" style="margin-top:16px;color:var(--amber-600);">⚠ この URL にはネットワーク情報が含まれています。共有にご注意ください。</p>
+            </div>
+            <button class="btn btn-primary" style="margin-top:8px;" onclick="exitSharedMode()">← ツールに戻る</button>
+        </section>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+// State
+// ============================================================
+let currentType = 'url';
+let qrTimer = null;
+let scanAbort = null; // AbortController for NDEFReader.scan()
+
+// NFC detection: NDEFReader only exists in Secure Contexts (HTTPS or localhost)
+// Also requires a compatible browser (Chrome on Android)
+function checkNFC() {
+    if (!window.isSecureContext) {
+        return { supported: false, reason: 'HTTPS が必要です（現在 HTTP または file:// でアクセスしています）' };
+    }
+    if (!('NDEFReader' in window)) {
+        return { supported: false, reason: 'このブラウザは Web NFC に対応していません（Android Chrome 89+ が必要）' };
+    }
+    return { supported: true };
+}
+
+const nfcCheck = checkNFC();
+const NFC = nfcCheck.supported;
+
+// ============================================================
+// Binary Builders
+// ============================================================
+const WSC = {
+    tlv(type, value) {
+        const b = new Uint8Array(4 + value.length);
+        b[0] = (type >> 8) & 0xFF; b[1] = type & 0xFF;
+        b[2] = (value.length >> 8) & 0xFF; b[3] = value.length & 0xFF;
+        b.set(value, 4); return b;
+    },
+    concat(arrays) {
+        const r = new Uint8Array(arrays.reduce((s, a) => s + a.length, 0));
+        let off = 0; for (const a of arrays) { r.set(a, off); off += a.length; } return r;
+    },
+    build(ssid, password) {
+        const e = new TextEncoder();
+        return this.tlv(0x100E, this.concat([
+            this.tlv(0x1026, new Uint8Array([0x01])),
+            this.tlv(0x1045, e.encode(ssid)),
+            this.tlv(0x1003, new Uint8Array([0x00, 0x20])),
+            this.tlv(0x100F, new Uint8Array([0x00, 0x08])),
+            this.tlv(0x1027, e.encode(password)),
+            this.tlv(0x1020, new Uint8Array([0xFF,0xFF,0xFF,0xFF,0xFF,0xFF])),
+        ]));
+    }
+};
+
+const BT = {
+    eir(type, data) {
+        const b = new Uint8Array(2 + data.length);
+        b[0] = 1 + data.length; b[1] = type; b.set(data, 2); return b;
+    },
+    build(macBytes, deviceName) {
+        const parts = [new Uint8Array([...macBytes].reverse())];
+        if (deviceName) parts.push(this.eir(0x09, new TextEncoder().encode(deviceName)));
+        const bodyLen = parts.reduce((s, a) => s + a.length, 0);
+        const total = 2 + bodyLen;
+        const r = new Uint8Array(total);
+        r[0] = total & 0xFF; r[1] = (total >> 8) & 0xFF;
+        let off = 2; for (const p of parts) { r.set(p, off); off += p.length; }
+        return r;
+    },
+    parseMac(str) {
+        const hex = str.replace(/[^0-9a-fA-F]/g, '');
+        if (hex.length !== 12) return null;
+        const b = new Uint8Array(6);
+        for (let i = 0; i < 6; i++) b[i] = parseInt(hex.substring(i*2, i*2+2), 16);
+        return b;
+    },
+    formatInput(input) {
+        let v = input.value.replace(/[^0-9a-fA-F]/g, '').toUpperCase();
+        let f = '';
+        for (let i = 0; i < v.length && i < 12; i++) {
+            if (i > 0 && i % 2 === 0) f += ':';
+            f += v[i];
+        }
+        input.value = f;
+    }
+};
+
+const VCARD = {
+    build(name, email, tel, org, url) {
+        if (!name) return null;
+        const lines = ['BEGIN:VCARD', 'VERSION:3.0', `FN:${name}`];
+        const p = name.split(/\s+/);
+        lines.push(p.length >= 2 ? `N:${p[0]};${p.slice(1).join(' ')};;;` : `N:${name};;;;`);
+        if (email) lines.push(`EMAIL:${email}`);
+        if (tel) lines.push(`TEL:${tel}`);
+        if (org) lines.push(`ORG:${org}`);
+        if (url) lines.push(`URL:${url}`);
+        lines.push('END:VCARD');
+        return lines.join('\r\n');
+    }
+};
+
+// ============================================================
+// UI
+// ============================================================
+function $(id) { return document.getElementById(id); }
+
+function toast(msg) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+function switchTab(tab) {
+    const isW = tab === 'write';
+    $('sec-write').classList.toggle('hidden', !isW);
+    $('sec-read').classList.toggle('hidden', isW);
+    $('tab-write').classList.toggle('active', isW);
+    $('tab-read').classList.toggle('active', !isW);
+    // Stop scanning when leaving READ tab
+    if (isW) stopScan();
+}
+
+function selectType(t) {
+    currentType = t;
+    document.querySelectorAll('.type-btn').forEach(el => el.classList.remove('selected'));
+    $(`tbtn-${t}`).classList.add('selected');
+    $('qr-section').classList.remove('show');
+    $('size-indicator').textContent = '';
+
+    const hasFallback = (t === 'wifi' || t === 'bt');
+    $('fallback-option').classList.toggle('show', hasFallback);
+
+    const area = $('form-area');
+    const forms = {
+        url: `
+            <div class="field-group">
+                <label class="field-label">URL</label>
+                <input id="f-url" class="field" type="url" placeholder="https://..." oninput="onFormChange()">
+            </div>`,
+        text: `
+            <div class="field-group">
+                <label class="field-label">テキスト</label>
+                <textarea id="f-text" class="field" placeholder="テキストデータ..." oninput="onFormChange()"></textarea>
+            </div>`,
+        wifi: `
+            <div class="field-group">
+                <label class="field-label">SSID</label>
+                <input id="f-ssid" class="field" placeholder="ネットワーク名" oninput="onFormChange()">
+            </div>
+            <div class="field-group">
+                <label class="field-label">パスワード</label>
+                <input id="f-pass" class="field" type="password" placeholder="パスワード" oninput="onFormChange()">
+            </div>`,
+        bt: `
+            <div class="field-group">
+                <label class="field-label">MAC アドレス</label>
+                <input id="f-mac" class="field field-mono" placeholder="AA:BB:CC:DD:EE:FF" maxlength="17" oninput="BT.formatInput(this); onFormChange()">
+                <p class="hint">設定 → 接続済みデバイス → デバイス詳細 で確認できます</p>
+            </div>
+            <div class="field-group">
+                <label class="field-label">デバイス名（オプション）</label>
+                <input id="f-btname" class="field" placeholder="My Speaker" oninput="onFormChange()">
+            </div>`,
+        vcard: `
+            <div class="field-group">
+                <label class="field-label">名前</label>
+                <input id="f-vcname" class="field" placeholder="山田 太郎" oninput="onFormChange()">
+            </div>
+            <div class="field-group">
+                <label class="field-label">メール</label>
+                <input id="f-vcemail" class="field" type="email" placeholder="taro@example.com" oninput="onFormChange()">
+            </div>
+            <div class="field-group">
+                <label class="field-label">電話番号</label>
+                <input id="f-vctel" class="field" type="tel" placeholder="090-1234-5678" oninput="onFormChange()">
+            </div>
+            <div class="field-group">
+                <label class="field-label">所属（オプション）</label>
+                <input id="f-vcorg" class="field" placeholder="〇〇大学" oninput="onFormChange()">
+            </div>
+            <div class="field-group">
+                <label class="field-label">URL（オプション）</label>
+                <input id="f-vcurl" class="field" type="url" placeholder="https://github.com/username" oninput="onFormChange()">
+            </div>`
+    };
+    area.innerHTML = forms[t] || '';
+    onFormChange();
+}
+
+// ============================================================
+// QR & Size
+// ============================================================
+function onFormChange() {
+    clearTimeout(qrTimer);
+    qrTimer = setTimeout(() => { updateQR(); updateSize(); updateFallbackUrl(); }, 300);
+}
+
+function updateQR() {
+    const sec = $('qr-section');
+    const container = $('qr-container');
+    const hint = $('qr-hint');
+    let text = '', hintText = '';
+
+    if (currentType === 'url') {
+        text = $('f-url')?.value?.trim() || '';
+        hintText = 'この URL の QR コードです。';
+    } else if (currentType === 'wifi') {
+        const ssid = $('f-ssid')?.value?.trim();
+        const pass = $('f-pass')?.value || '';
+        if (ssid) { text = `WIFI:S:${ssid};T:WPA;P:${pass};;`; hintText = 'Wi-Fi 接続用 QR。iPhone のカメラで読み取ると接続できます。'; }
+    }
+    if (!text) { sec.classList.remove('show'); return; }
+    sec.classList.add('show');
+    hint.textContent = hintText;
+    container.innerHTML = '';
+    new QRCode(container, { text, width: 200, height: 200, colorDark: "#1e293b", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M });
+}
+
+function updateSize() {
+    const el = $('size-indicator');
+    if (currentType !== 'vcard') { el.textContent = ''; return; }
+    const vc = VCARD.build($('f-vcname')?.value?.trim(), $('f-vcemail')?.value?.trim(), $('f-vctel')?.value?.trim(), $('f-vcorg')?.value?.trim(), $('f-vcurl')?.value?.trim());
+    if (!vc) { el.textContent = ''; return; }
+    const bytes = new TextEncoder().encode(vc).length;
+    el.textContent = `${bytes} bytes — NTAG213 ${bytes <= 144 ? '✅' : '❌'} / NTAG215 ${bytes <= 504 ? '✅' : '❌'}`;
+}
+
+// ============================================================
+// Build Records
+// ============================================================
+function buildRecords() {
+    const records = [];
+    if (currentType === 'url') {
+        const v = $('f-url')?.value?.trim();
+        if (!v) { toast('URL を入力してください'); return null; }
+        records.push({ recordType: 'url', data: v });
+    } else if (currentType === 'text') {
+        const v = $('f-text')?.value;
+        if (!v) { toast('テキストを入力してください'); return null; }
+        records.push({ recordType: 'text', data: v });
+    } else if (currentType === 'wifi') {
+        const ssid = $('f-ssid')?.value?.trim();
+        const pass = $('f-pass')?.value || '';
+        if (!ssid) { toast('SSID を入力してください'); return null; }
+        records.push({ recordType: 'mime', mediaType: 'application/vnd.wfa.wsc', data: WSC.build(ssid, pass).buffer });
+    } else if (currentType === 'bt') {
+        const mac = BT.parseMac($('f-mac')?.value || '');
+        if (!mac) { toast('MAC アドレスを正しく入力してください'); return null; }
+        records.push({ recordType: 'mime', mediaType: 'application/vnd.bluetooth.ep.oob', data: BT.build(mac, $('f-btname')?.value || '').buffer });
+    } else if (currentType === 'vcard') {
+        const vc = VCARD.build($('f-vcname')?.value?.trim(), $('f-vcemail')?.value?.trim(), $('f-vctel')?.value?.trim(), $('f-vcorg')?.value?.trim(), $('f-vcurl')?.value?.trim());
+        if (!vc) { toast('名前を入力してください'); return null; }
+        records.push({ recordType: 'mime', mediaType: 'text/vcard', data: new TextEncoder().encode(vc).buffer });
+    }
+    if ((currentType === 'wifi' || currentType === 'bt') && $('cb-fallback')?.checked) {
+        const url = buildFallbackUrl();
+        if (url && url !== APP_BASE) records.push({ recordType: 'url', data: url });
+    }
+    return records;
+}
+
+// ============================================================
+// Write
+// ============================================================
+async function startWrite() {
+    if (!NFC) { toast('この環境では NFC 書き込みできません'); return; }
+    const records = buildRecords();
+    if (!records) return;
+    const btn = $('btn-write');
+    btn.disabled = true; btn.textContent = 'タグを近づけてください...';
+    try {
+        await new NDEFReader().write({ records });
+        toast(`書き込み完了！（${records.length} レコード）`);
+    } catch (e) { toast('書き込み失敗: ' + e.message); }
+    finally { btn.disabled = false; btn.textContent = '書き込み開始'; }
+}
+
+// ============================================================
+// Read
+// ============================================================
+function stopScan() {
+    if (scanAbort) {
+        scanAbort.abort();
+        scanAbort = null;
+    }
+    // Reset read UI to idle
+    $('read-idle').classList.remove('hidden');
+    $('read-scanning').classList.add('hidden');
+}
+
+async function startRead() {
+    if (!NFC) return;
+    // Stop any existing scan first
+    stopScan();
+    try {
+        scanAbort = new AbortController();
+        const reader = new NDEFReader();
+        await reader.scan({ signal: scanAbort.signal });
+        $('read-idle').classList.add('hidden');
+        $('read-scanning').classList.remove('hidden');
+        reader.onreading = (event) => {
+            const { serialNumber, message } = event;
+            const card = document.createElement('div');
+            card.className = 'result-card';
+            let html = `<div class="result-header"><span class="result-id">ID: ${serialNumber}</span><span class="result-time">${new Date().toLocaleTimeString()}</span></div>`;
+            if (!message.records?.length) {
+                html += `<div class="record-item"><p class="hint" style="text-align:center">空のタグです</p></div>`;
+            } else {
+                message.records.forEach((r, i) => {
+                    const bytes = r.data ? new Uint8Array(r.data.buffer) : null;
+                    let content = '', extra = '';
+                    if (r.recordType === 'url' || r.recordType === 'text') {
+                        try { content = new TextDecoder().decode(r.data); } catch { content = '[decode error]'; }
+                    } else if (r.mediaType === 'application/vnd.wfa.wsc' && bytes) {
+                        content = '[WSC Binary]'; extra = parseWSC(bytes);
+                    } else if (r.mediaType === 'application/vnd.bluetooth.ep.oob' && bytes && bytes.length >= 8) {
+                        content = '[BT OOB] MAC: ' + Array.from(bytes.slice(2, 8)).reverse().map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(':');
+                    } else if (r.mediaType === 'text/vcard' && bytes) {
+                        try { content = new TextDecoder().decode(r.data); } catch { content = '[vCard]'; }
+                    } else if (bytes) {
+                        try { const t = new TextDecoder().decode(r.data); content = t.length < 200 ? t : `[${bytes.length} bytes]`; } catch { content = `[${bytes.length} bytes]`; }
+                    }
+                    const typeLabel = r.mediaType ? `${r.recordType} / ${r.mediaType}` : r.recordType;
+                    html += `<div class="record-item"><span class="record-type">#${i+1} ${esc(typeLabel)}</span><p class="record-content">${esc(content)}</p>${extra ? `<p class="record-extra">${extra}</p>` : ''}</div>`;
+                });
+            }
+            card.innerHTML = html;
+            $('read-results').prepend(card);
+            toast('読み取り成功');
+        };
+        reader.onreadingerror = () => toast('読み取りエラー');
+    } catch (e) { toast('エラー: ' + e.message); }
+}
+
+function parseWSC(bytes) {
+    const parts = []; let off = 0;
+    while (off + 4 <= bytes.length) {
+        const type = (bytes[off]<<8)|bytes[off+1], len = (bytes[off+2]<<8)|bytes[off+3];
+        if (off+4+len > bytes.length) break;
+        const val = bytes.slice(off+4, off+4+len);
+        if (type === 0x100E) return parseWSC(val);
+        if (type === 0x1045) parts.push('SSID: ' + new TextDecoder().decode(val));
+        if (type === 0x1027) parts.push('Key: ' + new TextDecoder().decode(val));
+        if (type === 0x1003) { const a=(val[0]<<8)|val[1]; parts.push('Auth: '+({0x0001:'Open',0x0002:'WPA',0x0020:'WPA2'}[a]||'0x'+a.toString(16))); }
+        off += 4 + len;
+    }
+    return parts.join(' / ');
+}
+
+function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ============================================================
+// Fragment → Shared QR Landing
+// ============================================================
+const APP_BASE = 'https://ohtaman.github.io/web-nfc/';
+
+function parseFragment() {
+    if (!location.hash || location.hash.length < 2) return null;
+    const params = new URLSearchParams(location.hash.slice(1));
+    const type = params.get('type');
+    if (!type) return null;
+    return { type, params };
+}
+
+function buildFallbackUrl() {
+    const parts = [];
+    if (currentType === 'wifi') {
+        const ssid = $('f-ssid')?.value?.trim();
+        const pass = $('f-pass')?.value || '';
+        if (!ssid) return APP_BASE;
+        parts.push('type=wifi');
+        parts.push('ssid=' + encodeURIComponent(ssid));
+        if (pass) parts.push('pass=' + encodeURIComponent(pass));
+    } else if (currentType === 'bt') {
+        const mac = $('f-mac')?.value?.trim();
+        const name = $('f-btname')?.value?.trim();
+        if (!mac) return APP_BASE;
+        parts.push('type=bt');
+        parts.push('mac=' + encodeURIComponent(mac));
+        if (name) parts.push('name=' + encodeURIComponent(name));
+    }
+    return parts.length ? APP_BASE + '#' + parts.join('&') : APP_BASE;
+}
+
+function updateFallbackUrl() {
+    // Fallback URL is now auto-generated, no visible input to update
+}
+
+function enterSharedMode(frag) {
+    $('sec-write').classList.add('hidden');
+    $('sec-read').classList.add('hidden');
+    $('sec-shared').classList.remove('hidden');
+    document.querySelector('.tabs').classList.add('hidden');
+
+    const info = $('shared-info');
+    const qrEl = $('shared-qr');
+    qrEl.innerHTML = '';
+
+    if (frag.type === 'wifi') {
+        const ssid = frag.params.get('ssid') || '';
+        const pass = frag.params.get('pass') || '';
+        info.innerHTML =
+            '<div style="font-size:48px;margin-bottom:12px;">📶</div>' +
+            '<h2 style="font-size:20px;font-weight:900;margin-bottom:4px;">Wi-Fi に接続</h2>' +
+            '<p style="font-size:14px;color:var(--slate-500);margin-bottom:16px;">ネットワーク: <strong style="color:var(--slate-800);">' + esc(ssid) + '</strong></p>';
+        const wifiStr = 'WIFI:S:' + ssid + ';T:WPA;P:' + pass + ';;';
+        new QRCode(qrEl, { text: wifiStr, width: 240, height: 240, colorDark: '#1e293b', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+    } else if (frag.type === 'bt') {
+        const mac = frag.params.get('mac') || '';
+        const name = frag.params.get('name') || '';
+        info.innerHTML =
+            '<div style="font-size:48px;margin-bottom:12px;">🎧</div>' +
+            '<h2 style="font-size:20px;font-weight:900;margin-bottom:4px;">Bluetooth デバイス</h2>' +
+            '<p style="font-size:14px;color:var(--slate-500);">MAC: <strong style="color:var(--slate-800);font-family:monospace;">' + esc(mac) + '</strong></p>' +
+            (name ? '<p style="font-size:14px;color:var(--slate-500);">デバイス名: <strong style="color:var(--slate-800);">' + esc(name) + '</strong></p>' : '') +
+            '<p class="hint" style="margin-top:12px;">Bluetooth にはQRコードによる接続方法がありません。Android で NFC タグをタッチするとペアリングできます。</p>';
+        $('shared-qr-area').style.display = 'none';
+    }
+}
+
+function exitSharedMode() {
+    history.replaceState(null, '', location.pathname + location.search);
+    $('sec-shared').classList.add('hidden');
+    document.querySelector('.tabs').classList.remove('hidden');
+    $('shared-qr-area').style.display = '';
+    selectType('url');
+    switchTab('write');
+}
+
+// ============================================================
+// Init
+// ============================================================
+window.onload = () => {
+    if (NFC) {
+        $('btn-write').disabled = false;
+        $('nfc-warn-write').classList.remove('show');
+        $('read-idle').classList.remove('hidden');
+        $('read-unsupported').classList.add('hidden');
+    } else {
+        $('btn-write').disabled = true;
+        const warn = $('nfc-warn-write');
+        warn.textContent = '\u26a0 ' + nfcCheck.reason;
+        warn.classList.add('show');
+        $('read-idle').classList.add('hidden');
+        $('read-unsupported').classList.remove('hidden');
+        $('read-unsupported').querySelector('.hint').textContent = nfcCheck.reason;
+    }
+
+    // Check fragment → shared landing mode
+    const frag = parseFragment();
+    if (frag && (frag.type === 'wifi' || frag.type === 'bt')) {
+        enterSharedMode(frag);
+    } else {
+        selectType('url');
+        switchTab('write');
+    }
+};
+$('btn-write').onclick = startWrite;
+$('btn-read').onclick = startRead;
+</script>
+
+</body></html>
