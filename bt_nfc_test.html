@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bluetooth OOB NFC 書き込みテスト</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto; padding: 16px; background: #f5f5f5; }
+  h1 { font-size: 1.2em; margin-bottom: 8px; }
+  .desc { font-size: 0.85em; color: #666; margin-bottom: 16px; line-height: 1.5; }
+  .card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  .card h2 { font-size: 1em; margin-bottom: 12px; }
+  label { display: block; font-size: 0.85em; color: #555; margin-bottom: 4px; }
+  input, select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 1em; margin-bottom: 10px; }
+  button { width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 1em; font-weight: bold; cursor: pointer; margin-bottom: 8px; }
+  .btn-write { background: #2196F3; color: #fff; }
+  .btn-write:disabled { background: #ccc; }
+  .btn-read { background: #FF9800; color: #fff; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75em; margin-left: 8px; }
+  .tag-exp { background: #FFF3E0; color: #E65100; }
+  .section-title { display: flex; align-items: center; }
+  #log { background: #1a1a2e; color: #0f0; border-radius: 8px; padding: 12px; font-family: monospace; font-size: 0.8em; min-height: 120px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+  details { margin-top: 8px; font-size: 0.85em; color: #666; }
+  details summary { cursor: pointer; }
+  details pre { background: #f0f0f0; padding: 8px; border-radius: 4px; margin-top: 4px; overflow-x: auto; font-size: 0.8em; }
+  .help { font-size: 0.75em; color: #999; margin-bottom: 8px; line-height: 1.4; }
+  .mac-input { font-family: monospace; letter-spacing: 1px; }
+</style>
+</head>
+<body>
+
+<h1>Bluetooth OOB NFC テスト</h1>
+<p class="desc">
+  Bluetooth OOB（Out of Band）データを MIME レコードとして NFC タグに書き込み、
+  Android が Bluetooth ペアリングを開始するか検証します。
+</p>
+
+<!-- パターン1: シンプル OOB (ep.oob) -->
+<div class="card">
+  <div class="section-title">
+    <h2>① Classic Bluetooth OOB</h2>
+    <span class="tag tag-exp">実験的</span>
+  </div>
+  <p class="desc">MIME: <code>application/vnd.bluetooth.ep.oob</code><br>スピーカー、ヘッドホン等の Classic Bluetooth 向け</p>
+
+  <label>MAC アドレス</label>
+  <input type="text" id="bt-mac" class="mac-input" placeholder="AA:BB:CC:DD:EE:FF" maxlength="17" oninput="formatMac(this); updatePreview()">
+  <p class="help">Android の設定 → 接続済みデバイス → デバイス詳細 で確認できます</p>
+
+  <label>デバイス名（オプション）</label>
+  <input type="text" id="bt-name" placeholder="My Speaker" oninput="updatePreview()">
+
+  <label>デバイスクラス（オプション）</label>
+  <select id="bt-class" onchange="updatePreview()">
+    <option value="">指定しない</option>
+    <option value="240404">オーディオ（スピーカー）</option>
+    <option value="240418">オーディオ（ヘッドホン）</option>
+    <option value="5a020c">スマートフォン</option>
+    <option value="000000">汎用</option>
+  </select>
+
+  <button class="btn-write" id="btn-bt-oob" onclick="writeBtOob()">Classic BT OOB で書き込み</button>
+
+  <details>
+    <summary>構築されるバイナリ（hex）</summary>
+    <pre id="bt-hex">MAC アドレスを入力するとプレビューされます</pre>
+  </details>
+</div>
+
+<!-- パターン2: BLE OOB -->
+<div class="card">
+  <div class="section-title">
+    <h2>② BLE OOB</h2>
+    <span class="tag tag-exp">実験的</span>
+  </div>
+  <p class="desc">MIME: <code>application/vnd.bluetooth.le.oob</code><br>BLE デバイス向け。上で動かなかった場合の比較用。</p>
+  <button class="btn-write" id="btn-ble-oob" onclick="writeBleOob()">BLE OOB で書き込み</button>
+</div>
+
+<!-- 読み取り -->
+<div class="card">
+  <h2>③ NFC タグを読み取る</h2>
+  <p class="desc">書き込んだタグの中身を確認します。</p>
+  <button class="btn-read" onclick="readTag()">読み取り開始</button>
+</div>
+
+<!-- ログ -->
+<div class="card">
+  <h2>ログ</h2>
+  <div id="log"></div>
+  <button style="margin-top:8px; background:#eee; color:#333;" onclick="clearLog()">クリア</button>
+</div>
+
+<script>
+// --- Log ---
+function log(msg) {
+  const el = document.getElementById('log');
+  const time = new Date().toLocaleTimeString('ja-JP');
+  el.textContent += `[${time}] ${msg}\n`;
+  el.scrollTop = el.scrollHeight;
+}
+function clearLog() { document.getElementById('log').textContent = ''; }
+
+// --- MAC address formatter ---
+function formatMac(input) {
+  let v = input.value.replace(/[^0-9a-fA-F]/g, '').toUpperCase();
+  let formatted = '';
+  for (let i = 0; i < v.length && i < 12; i++) {
+    if (i > 0 && i % 2 === 0) formatted += ':';
+    formatted += v[i];
+  }
+  input.value = formatted;
+}
+
+function parseMac(str) {
+  const hex = str.replace(/[^0-9a-fA-F]/g, '');
+  if (hex.length !== 12) return null;
+  const bytes = new Uint8Array(6);
+  for (let i = 0; i < 6; i++) {
+    bytes[i] = parseInt(hex.substring(i*2, i*2+2), 16);
+  }
+  return bytes;
+}
+
+function toHex(buf) {
+  return Array.from(buf).map(b => b.toString(16).padStart(2, '0')).join(' ');
+}
+
+// --- Bluetooth OOB builder ---
+// Classic Bluetooth OOB format (Bluetooth Core Spec, Vol 3, Part C, Section 5.2):
+//   [2 bytes] OOB Data Length (little-endian, includes these 2 bytes)
+//   [6 bytes] BD_ADDR (little-endian)
+//   [optional EIR data...]
+//
+// EIR (Extended Inquiry Response) format:
+//   [1 byte] length (of type + data)
+//   [1 byte] EIR type
+//   [N bytes] data
+
+function buildEir(type, data) {
+  const buf = new Uint8Array(2 + data.length);
+  buf[0] = 1 + data.length; // length = type byte + data
+  buf[1] = type;
+  buf.set(data, 2);
+  return buf;
+}
+
+function buildBtOob(macBytes, deviceName, deviceClassHex) {
+  const parts = [];
+
+  // MAC address in little-endian (reverse order)
+  const macLE = new Uint8Array([...macBytes].reverse());
+  parts.push(macLE);
+
+  // EIR: Device Class (type 0x0D)
+  if (deviceClassHex) {
+    const cls = new Uint8Array(3);
+    for (let i = 0; i < 3; i++) {
+      cls[i] = parseInt(deviceClassHex.substring(i*2, i*2+2), 16);
+    }
+    parts.push(buildEir(0x0D, cls));
+  }
+
+  // EIR: Complete Local Name (type 0x09)
+  if (deviceName) {
+    parts.push(buildEir(0x09, new TextEncoder().encode(deviceName)));
+  }
+
+  // Calculate total length
+  const bodyLen = parts.reduce((s, a) => s + a.length, 0);
+  const totalLen = 2 + bodyLen; // 2 bytes for length field itself
+
+  const result = new Uint8Array(totalLen);
+  // Length field (little-endian)
+  result[0] = totalLen & 0xFF;
+  result[1] = (totalLen >> 8) & 0xFF;
+  // Body
+  let off = 2;
+  for (const p of parts) {
+    result.set(p, off);
+    off += p.length;
+  }
+
+  return result;
+}
+
+// BLE OOB format (Bluetooth Core Spec, Vol 3, Part C, Section 5.4):
+//   EIR-like TLV sequence (no length prefix, no MAC prefix)
+//   Required: LE Bluetooth Device Address (type 0x1B)
+//   Optional: LE Role (type 0x1C), device name, etc.
+function buildBleOob(macBytes, deviceName) {
+  const parts = [];
+
+  // LE Bluetooth Device Address (type 0x1B): 6 bytes addr + 1 byte type (0x00 = public)
+  const addrData = new Uint8Array(7);
+  // LE address is also little-endian
+  for (let i = 0; i < 6; i++) addrData[i] = macBytes[5 - i];
+  addrData[6] = 0x00; // public address
+  parts.push(buildEir(0x1B, addrData));
+
+  // LE Role (type 0x1C): 0x00 = peripheral only
+  parts.push(buildEir(0x1C, new Uint8Array([0x00])));
+
+  // Complete Local Name (type 0x09)
+  if (deviceName) {
+    parts.push(buildEir(0x09, new TextEncoder().encode(deviceName)));
+  }
+
+  const totalLen = parts.reduce((s, a) => s + a.length, 0);
+  const result = new Uint8Array(totalLen);
+  let off = 0;
+  for (const p of parts) { result.set(p, off); off += p.length; }
+  return result;
+}
+
+// --- Preview ---
+function updatePreview() {
+  const macStr = document.getElementById('bt-mac').value;
+  const mac = parseMac(macStr);
+  const el = document.getElementById('bt-hex');
+  if (!mac) {
+    el.textContent = 'MAC アドレスを入力するとプレビューされます';
+    return;
+  }
+  const name = document.getElementById('bt-name').value;
+  const cls = document.getElementById('bt-class').value;
+  const data = buildBtOob(mac, name, cls);
+  el.textContent = `Size: ${data.length} bytes\n${toHex(data)}`;
+}
+
+// --- NFC check ---
+const hasNFC = ('NDEFReader' in window);
+if (!hasNFC) {
+  log('⚠ Web NFC 非対応ブラウザです');
+  document.getElementById('btn-bt-oob').disabled = true;
+  document.getElementById('btn-ble-oob').disabled = true;
+}
+
+// --- Write Classic BT OOB ---
+async function writeBtOob() {
+  const macStr = document.getElementById('bt-mac').value;
+  const mac = parseMac(macStr);
+  if (!mac) { log('❌ MAC アドレスを正しく入力してください (AA:BB:CC:DD:EE:FF)'); return; }
+
+  const name = document.getElementById('bt-name').value;
+  const cls = document.getElementById('bt-class').value;
+  const oobData = buildBtOob(mac, name, cls);
+
+  log(`BT OOB 構築完了 (${oobData.length} bytes)`);
+  log(`MAC: ${macStr}${name ? ' / Name: ' + name : ''}${cls ? ' / Class: ' + cls : ''}`);
+  log(`Hex: ${toHex(oobData)}`);
+
+  try {
+    const writer = new NDEFReader();
+    log('📡 NFC タグをかざしてください...');
+    await writer.write({
+      records: [{
+        recordType: "mime",
+        mediaType: "application/vnd.bluetooth.ep.oob",
+        data: oobData.buffer
+      }]
+    });
+    log('✅ Classic BT OOB 書き込み完了！');
+    log('→ タグをかざして Bluetooth ペアリングが始まるか確認してください');
+  } catch (e) {
+    log(`❌ エラー: ${e.name}: ${e.message}`);
+  }
+}
+
+// --- Write BLE OOB ---
+async function writeBleOob() {
+  const macStr = document.getElementById('bt-mac').value;
+  const mac = parseMac(macStr);
+  if (!mac) { log('❌ MAC アドレスを正しく入力してください'); return; }
+
+  const name = document.getElementById('bt-name').value;
+  const bleData = buildBleOob(mac, name);
+
+  log(`BLE OOB 構築完了 (${bleData.length} bytes)`);
+  log(`Hex: ${toHex(bleData)}`);
+
+  try {
+    const writer = new NDEFReader();
+    log('📡 NFC タグをかざしてください...');
+    await writer.write({
+      records: [{
+        recordType: "mime",
+        mediaType: "application/vnd.bluetooth.le.oob",
+        data: bleData.buffer
+      }]
+    });
+    log('✅ BLE OOB 書き込み完了！');
+    log('→ タグをかざして Bluetooth ペアリングが始まるか確認してください');
+  } catch (e) {
+    log(`❌ エラー: ${e.name}: ${e.message}`);
+  }
+}
+
+// --- Read ---
+async function readTag() {
+  try {
+    const reader = new NDEFReader();
+    log('📡 読み取り待機中...');
+    await reader.scan();
+
+    reader.addEventListener('reading', (event) => {
+      const { serialNumber, message } = event;
+      log(`--- タグ検出 ---`);
+      log(`Serial: ${serialNumber}`);
+      log(`レコード数: ${message.records.length}`);
+
+      for (let i = 0; i < message.records.length; i++) {
+        const r = message.records[i];
+        log(`\n[Record ${i}]`);
+        log(`  recordType: ${r.recordType}`);
+        log(`  mediaType: ${r.mediaType || '(none)'}`);
+
+        if (r.data) {
+          const bytes = new Uint8Array(r.data.buffer);
+          log(`  data size: ${bytes.length} bytes`);
+          log(`  hex: ${toHex(bytes)}`);
+
+          // BT OOB なら MAC を抽出して表示
+          if (r.mediaType === 'application/vnd.bluetooth.ep.oob' && bytes.length >= 8) {
+            const len = bytes[0] | (bytes[1] << 8);
+            // MAC is bytes 2-7 in little-endian
+            const mac = Array.from(bytes.slice(2, 8)).reverse()
+              .map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(':');
+            log(`  → OOB Length: ${len}`);
+            log(`  → MAC: ${mac}`);
+          }
+
+          // BLE OOB ならアドレスを探す
+          if (r.mediaType === 'application/vnd.bluetooth.le.oob') {
+            let off = 0;
+            while (off < bytes.length) {
+              const eirLen = bytes[off];
+              if (eirLen === 0 || off + eirLen >= bytes.length) break;
+              const eirType = bytes[off + 1];
+              if (eirType === 0x1B && eirLen >= 8) { // LE Bluetooth Device Address
+                const addr = Array.from(bytes.slice(off + 2, off + 8)).reverse()
+                  .map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(':');
+                log(`  → LE Address: ${addr} (type: ${bytes[off + 8]})`);
+              }
+              if (eirType === 0x09) { // Complete Local Name
+                const name = new TextDecoder().decode(bytes.slice(off + 2, off + 1 + eirLen));
+                log(`  → Name: ${name}`);
+              }
+              off += 1 + eirLen;
+            }
+          }
+        }
+      }
+      log(`--- 読み取り完了 ---\n`);
+    });
+  } catch (e) {
+    log(`❌ エラー: ${e.name}: ${e.message}`);
+  }
+}
+</script>
+</body>
+</html>
