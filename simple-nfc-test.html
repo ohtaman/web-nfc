@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simple Web NFC Test</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 600px;
+      margin: 50px auto;
+      padding: 20px;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 10px 5px;
+      font-size: 16px;
+    }
+    input {
+      padding: 8px;
+      width: 300px;
+      font-size: 14px;
+    }
+    #output {
+      margin-top: 20px;
+      padding: 10px;
+      background: #f0f0f0;
+      border-radius: 4px;
+      min-height: 100px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Simple Web NFC Test</h1>
+
+  <h2>書き込み</h2>
+  <input type="text" id="url-input" placeholder="https://example.com" value="https://example.com">
+  <button id="write-btn">タグに書き込む</button>
+
+  <h2>読み取り</h2>
+  <button id="scan-btn">スキャン開始</button>
+
+  <h2>結果</h2>
+  <div id="output"></div>
+
+  <script>
+    const output = document.getElementById('output');
+
+    function log(message) {
+      output.innerHTML += message + '<br>';
+    }
+
+    // URL書き込み
+    document.getElementById('write-btn').addEventListener('click', async () => {
+      const url = document.getElementById('url-input').value;
+      const ndef = new NDEFReader();
+
+      log('タグを近づけてください...');
+      await ndef.write({
+        records: [{ recordType: 'url', data: url }]
+      });
+      log('✓ 書き込み完了！');
+    });
+
+    // タグ読み取り
+    document.getElementById('scan-btn').addEventListener('click', async () => {
+      const reader = new NDEFReader();
+
+      log('スキャン開始...');
+      await reader.scan();
+
+      reader.onreading = (event) => {
+        const { serialNumber, message } = event;
+        log(`シリアル番号: ${serialNumber}`);
+
+        for (const record of message.records) {
+          log(`レコードタイプ: ${record.recordType}`);
+
+          if (record.recordType === 'url') {
+            const url = new TextDecoder().decode(record.data);
+            log(`URL: ${url}`);
+          } else if (record.recordType === 'text') {
+            const text = new TextDecoder().decode(record.data);
+            log(`テキスト: ${text}`);
+          }
+        }
+      };
+    });
+  </script>
+</body>
+</html>
